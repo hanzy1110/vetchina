@@ -64,6 +64,12 @@ getTrainEmails = do
     let n = round $ 0.7 * (fromIntegral $ L.length emails)
     return $ take n emails
 
+getValidationEmails::IO [CL.Email]
+getValidationEmails = do 
+    emails <- fromJust <$> CL.loadCsv
+    let n = round $ 0.7 * (fromIntegral $ L.length emails)
+    return $ snd $ splitAt n emails
+
 getMailBySpamHam::T.Text -> IO [CL.Email]
 getMailBySpamHam spamOrHam = filteredEmails where
     filteredEmails = filter (\(CL.Email message_ID subject message spamHam date)-> spamHam==spamOrHam) <$> getTrainEmails
@@ -111,6 +117,43 @@ textProbabilitySpam spammodel text =
      ips = map (\p -> 1.0-p) ps
      pp = product ps
     in pp/(pp + product ips)
+
+
+messageFromEmail:: CL.Email -> T.Text
+messageFromEmail (CL.Email message_ID subject message spamHam date) = message
+
+tagFromEmail::CL.Email -> T.Text
+tagFromEmail (CL.Email message_ID subject message spamHam date) = spamHam
+
+classifySpamHam::Float->T.Text
+classifySpamHam x = if x>=0.9 then "spam" else "ham"
+
+dropFalse:: [Bool] -> [Bool]
+dropFalse [] = []
+dropFalse (x:xs)
+    | x = x:dropFalse xs
+    | otherwise = dropFalse xs
+
+validateEmails::Int -> IO ()
+validateEmails n = do
+    sm <- spamModel
+    emails <- take n <$> getValidationEmails
+
+    let real_tags = map tagFromEmail emails
+    let tags = map (classifySpamHam . (textProbabilitySpam sm) . messageFromEmail) emails  
+    putStrLn "Tags... \n"
+    print $ tags
+
+    putStrLn "Real Tags... \n"
+    print $ tags
+
+    let succeses = dropFalse [a==b | (a,b)<-zip tags real_tags]
+    putStrLn "results... \n"
+    print $ succeses
+
+    putStrLn  "ratio..."  
+    print $  ((fromIntegral $ L.length succeses) / (fromIntegral $ n))
+    
 
 main::IO ()
 main = do
