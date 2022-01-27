@@ -1,6 +1,7 @@
 dist
 dist-*
 cabal-dev
+app/data/
 *.o
 *.hi
 *.hie

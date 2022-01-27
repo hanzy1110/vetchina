@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Main where
 import qualified Data.Map as M
 import qualified Data.Text as T
@@ -6,9 +8,11 @@ import qualified Data.Text.IO as T
 import Data.Foldable
 import Data.Maybe
 import Data.Char
-import Data.List
+import qualified Data.List as L
 import Data.Function
 import System.Directory
+import Data.Csv
+import qualified CsvDataLoader as CL
 -- import Control.Monad
 import Text.Printf
 
@@ -25,7 +29,7 @@ newtype BoW = BoW
 
 summaryBoW::BoW -> IO ()
 summaryBoW (BoW bow)= do
-    forM_ (sortBy (compare `on` snd) $ M.toList bow) $ \(w,f) -> printf "%s -> %d \n" (wordToText w) f
+    forM_ (L.sortBy (compare `on` snd) $ M.toList bow) $ \(w,f) -> printf "%s -> %d \n" (wordToText w) f
 
 
 normalizeTextToWords:: T.Text -> [Word']
@@ -54,24 +58,32 @@ wordProbability ::  BoW -> Word' -> Float
 wordProbability bow w = fromIntegral n/ (fromIntegral $ wordsCount bow) where
     n = fromMaybe 0 $ M.lookup w $ bowToMap bow
 
--- <$> functor operator, gives me the thing inside the Monad!s
-bowfromFile :: FilePath -> IO BoW
-bowfromFile filepath =
-     textToBoW <$> T.readFile filepath
---listDirectory returns [filenames] !!
-bowFromFolder :: FilePath -> IO BoW
-bowFromFolder folderPath = do
-    filenames <- listDirectory folderPath
-    bows <- mapM (\filename -> bowfromFile (folderPath <> filename)) filenames
+getTrainEmails::IO [CL.Email]
+getTrainEmails = do 
+    emails <- fromJust <$> CL.loadCsv
+    let n = round $ 0.7 * (fromIntegral $ L.length emails)
+    return $ take n emails
+
+getMailBySpamHam::T.Text -> IO [CL.Email]
+getMailBySpamHam spamOrHam = filteredEmails where
+    filteredEmails = filter (\(CL.Email message_ID subject message spamHam date)-> spamHam==spamOrHam) <$> getTrainEmails
+
+bowFromEmail::CL.Email -> BoW
+bowFromEmail (CL.Email message_ID subject message spamHam date) = textToBoW message
+
+bowFromEmails:: T.Text -> IO BoW
+bowFromEmails spamOrHam = do
+    -- emails <- getMailBySpamHam spamOrHam 
+    bows <- map bowFromEmail <$> getMailBySpamHam spamOrHam
     return $ fold bows
 
 data SpamModel = SpamModel {spamBow:: BoW,
-                            hamBow::BoW}
+                            hamBow::BoW} deriving Show
 
 spamModel :: IO SpamModel
 spamModel = do
-    spam<-bowFromFolder "app\\data\\train\\spam\\"
-    ham <-bowFromFolder "app\\data\\train\\ham\\"
+    spam <- bowFromEmails "spam"
+    ham <- bowFromEmails "ham"
     return $ SpamModel spam ham
 
 seenWord::  Word' -> SpamModel -> Bool
@@ -100,5 +112,7 @@ textProbabilitySpam spammodel text =
      pp = product ps
     in pp/(pp + product ips)
 
-main :: IO ()
-main = putStrLn "Hello, Haskell!"
+main::IO ()
+main = do
+    sm@(SpamModel spam ham) <- spamModel
+    summaryBoW spam
