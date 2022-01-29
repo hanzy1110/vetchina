@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module CsvDataLoader(Email(..),loadCsv) where
+module CsvDataLoader(Email(..),loadCsv, WordProb(..),loadModelCSV) where
 
 import qualified Data.ByteString.Lazy as BL
 import Data.Csv
@@ -32,3 +32,25 @@ loadCsv = do
     case decodeByName csvData of
         Left err -> return Nothing
         Right (_,records) -> return $ Just $ foldl (\acc elem -> (:) elem acc) [] records
+
+data WordProb = WordProb {word :: !T.Text, probability :: Double}
+    deriving (Show, Eq, Ord)
+
+instance FromNamedRecord WordProb where
+    parseNamedRecord m = WordProb <$> m .: "word" <*> m .: "probability"
+
+instance ToNamedRecord WordProb where
+    toNamedRecord (WordProb word probability ) = namedRecord [
+        "word".=word , "probability".=probability]
+
+instance DefaultOrdered WordProb where
+    headerOrder _ = header ["word", "probability"]
+
+loadModelCSV :: FilePath -> IO (Maybe [WordProb])
+loadModelCSV filePath = do
+    csvData <- BL.readFile filePath
+    case decodeByName csvData of
+        Left err -> return Nothing
+        Right (_,records) -> return $ Just $ foldl (\acc elem -> (:) elem acc) [] records
+
+
